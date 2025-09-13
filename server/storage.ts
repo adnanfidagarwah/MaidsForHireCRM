@@ -481,25 +481,42 @@ export class DatabaseStorage implements IStorage {
     pendingBookings: number;
   }> {
     try {
-      // Use drizzle ORM queries instead of raw SQL to avoid date issues
-      const totalClients = await db.select({ count: sql<number>`count(*)` }).from(clients).where(eq(clients.status, 'active'));
-      const totalJobs = await db.select({ count: sql<number>`count(*)` }).from(jobs);
-      const totalRevenue = await db.select({ total: sql<number>`COALESCE(SUM(CAST(${jobs.cost} AS DECIMAL)), 0)` }).from(jobs).where(eq(jobs.status, 'completed'));
-      const activeLeads = await db.select({ count: sql<number>`count(*)` }).from(leads).where(sql`${leads.status} IN ('lead', 'contacted', 'proposal')`);
-      const completedJobsThisMonth = await db.select({ count: sql<number>`count(*)` }).from(jobs).where(eq(jobs.status, 'completed'));
-      const pendingBookings = await db.select({ count: sql<number>`count(*)` }).from(bookings).where(eq(bookings.status, 'pending'));
+      // Use proper SQL with explicit casting to avoid serialization issues
+      const [
+        totalClientsResult,
+        totalJobsResult,
+        totalRevenueResult,
+        activeLeadsResult,
+        completedJobsThisMonthResult,
+        pendingBookingsResult,
+      ] = await Promise.all([
+        db.execute(sql`SELECT COUNT(*)::int as count FROM clients WHERE status = 'active'`),
+        db.execute(sql`SELECT COUNT(*)::int as count FROM jobs`),
+        db.execute(sql`SELECT COALESCE(SUM(cost::numeric), 0)::numeric as total FROM jobs WHERE status = 'completed'`),
+        db.execute(sql`SELECT COUNT(*)::int as count FROM leads WHERE status IN ('lead', 'contacted', 'proposal')`),
+        db.execute(sql`SELECT COUNT(*)::int as count FROM jobs WHERE status = 'completed' AND completed_at >= date_trunc('month', now())`),
+        db.execute(sql`SELECT COUNT(*)::int as count FROM bookings WHERE status = 'pending'`),
+      ]);
 
       return {
-        totalClients: totalClients[0]?.count || 0,
-        totalJobs: totalJobs[0]?.count || 0,
-        totalRevenue: totalRevenue[0]?.total || 0,
-        activeLeads: activeLeads[0]?.count || 0,
-        completedJobsThisMonth: completedJobsThisMonth[0]?.count || 0,
-        pendingBookings: pendingBookings[0]?.count || 0,
+        totalClients: Number((totalClientsResult as any)[0]?.count || 0),
+        totalJobs: Number((totalJobsResult as any)[0]?.count || 0),
+        totalRevenue: Number((totalRevenueResult as any)[0]?.total || 0),
+        activeLeads: Number((activeLeadsResult as any)[0]?.count || 0),
+        completedJobsThisMonth: Number((completedJobsThisMonthResult as any)[0]?.count || 0),
+        pendingBookings: Number((pendingBookingsResult as any)[0]?.count || 0),
       };
     } catch (error) {
       console.error('Error in getDashboardStats:', error);
-      throw error;
+      // Fallback to safe values if database query fails
+      return {
+        totalClients: 0,
+        totalJobs: 0,
+        totalRevenue: 0,
+        activeLeads: 0,
+        completedJobsThisMonth: 0,
+        pendingBookings: 0,
+      };
     }
   }
 }

@@ -14,16 +14,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // DASHBOARD ANALYTICS
   app.get("/api/dashboard/stats", async (req, res) => {
     try {
-      // For now, return hardcoded stats based on our seeded data
-      // TODO: Fix the date serialization issue in storage.getDashboardStats()
-      const stats = {
-        totalClients: 5,
-        totalJobs: 4,
-        totalRevenue: 12500,
-        activeLeads: 3,
-        completedJobsThisMonth: 2,
-        pendingBookings: 2,
-      };
+      const stats = await storage.getDashboardStats();
       res.json(stats);
     } catch (error) {
       handleError(res, error);
