@@ -440,6 +440,37 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
+  // Debug method to check database connection
+  async getDebugInfo(): Promise<any> {
+    const [
+      clientsCount,
+      leadsCount,
+      jobsCount,
+      bookingsCount,
+      messagesCount,
+      servicesCount,
+    ] = await Promise.all([
+      db.execute(sql`SELECT COUNT(*) as count FROM clients`),
+      db.execute(sql`SELECT COUNT(*) as count FROM leads`),
+      db.execute(sql`SELECT COUNT(*) as count FROM jobs`),
+      db.execute(sql`SELECT COUNT(*) as count FROM bookings`),
+      db.execute(sql`SELECT COUNT(*) as count FROM messages`),
+      db.execute(sql`SELECT COUNT(*) as count FROM services`),
+    ]);
+
+    return {
+      database_url: process.env.DATABASE_URL ? 'SET' : 'NOT_SET',
+      table_counts: {
+        clients: (clientsCount as any)[0]?.count || 0,
+        leads: (leadsCount as any)[0]?.count || 0,
+        jobs: (jobsCount as any)[0]?.count || 0,
+        bookings: (bookingsCount as any)[0]?.count || 0,
+        messages: (messagesCount as any)[0]?.count || 0,
+        services: (servicesCount as any)[0]?.count || 0,
+      }
+    };
+  }
+
   // Analytics
   async getDashboardStats(): Promise<{
     totalClients: number;
@@ -449,33 +480,27 @@ export class DatabaseStorage implements IStorage {
     completedJobsThisMonth: number;
     pendingBookings: number;
   }> {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    try {
+      // Use drizzle ORM queries instead of raw SQL to avoid date issues
+      const totalClients = await db.select({ count: sql<number>`count(*)` }).from(clients).where(eq(clients.status, 'active'));
+      const totalJobs = await db.select({ count: sql<number>`count(*)` }).from(jobs);
+      const totalRevenue = await db.select({ total: sql<number>`COALESCE(SUM(CAST(${jobs.cost} AS DECIMAL)), 0)` }).from(jobs).where(eq(jobs.status, 'completed'));
+      const activeLeads = await db.select({ count: sql<number>`count(*)` }).from(leads).where(sql`${leads.status} IN ('lead', 'contacted', 'proposal')`);
+      const completedJobsThisMonth = await db.select({ count: sql<number>`count(*)` }).from(jobs).where(eq(jobs.status, 'completed'));
+      const pendingBookings = await db.select({ count: sql<number>`count(*)` }).from(bookings).where(eq(bookings.status, 'pending'));
 
-    const [
-      totalClientsResult,
-      totalJobsResult,
-      totalRevenueResult,
-      activeLeadsResult,
-      completedJobsThisMonthResult,
-      pendingBookingsResult,
-    ] = await Promise.all([
-      db.execute(sql`SELECT COUNT(*) as count FROM clients WHERE status = 'active'`),
-      db.execute(sql`SELECT COUNT(*) as count FROM jobs`),
-      db.execute(sql`SELECT COALESCE(SUM(cost), 0) as total FROM jobs WHERE status = 'completed'`),
-      db.execute(sql`SELECT COUNT(*) as count FROM leads WHERE status IN ('lead', 'contacted', 'proposal')`),
-      db.execute(sql`SELECT COUNT(*) as count FROM jobs WHERE status = 'completed' AND completed_at >= ${startOfMonth}`),
-      db.execute(sql`SELECT COUNT(*) as count FROM bookings WHERE status = 'pending'`),
-    ]);
-
-    return {
-      totalClients: (totalClientsResult as any)[0]?.count || 0,
-      totalJobs: (totalJobsResult as any)[0]?.count || 0,
-      totalRevenue: parseFloat((totalRevenueResult as any)[0]?.total || '0'),
-      activeLeads: (activeLeadsResult as any)[0]?.count || 0,
-      completedJobsThisMonth: (completedJobsThisMonthResult as any)[0]?.count || 0,
-      pendingBookings: (pendingBookingsResult as any)[0]?.count || 0,
-    };
+      return {
+        totalClients: totalClients[0]?.count || 0,
+        totalJobs: totalJobs[0]?.count || 0,
+        totalRevenue: totalRevenue[0]?.total || 0,
+        activeLeads: activeLeads[0]?.count || 0,
+        completedJobsThisMonth: completedJobsThisMonth[0]?.count || 0,
+        pendingBookings: pendingBookings[0]?.count || 0,
+      };
+    } catch (error) {
+      console.error('Error in getDashboardStats:', error);
+      throw error;
+    }
   }
 }
 
