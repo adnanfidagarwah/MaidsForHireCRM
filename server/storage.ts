@@ -68,7 +68,7 @@ databaseUrl = fixSupabaseUrl(databaseUrl);
 
 const connection = postgres(databaseUrl, {
   ssl: { rejectUnauthorized: false },
-  max: 10,
+  max: 5,
 });
 const db = drizzle(connection);
 
