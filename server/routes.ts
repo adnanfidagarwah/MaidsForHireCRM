@@ -3,8 +3,11 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertClientSchema, insertLeadSchema, insertJobSchema, insertBookingSchema, insertMessageSchema, insertServiceSchema } from "@shared/schema";
 import { z } from "zod";
+import { setupAuth } from "./auth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup authentication first - based on blueprint:javascript_auth_all_persistance
+  setupAuth(app);
   // Helper function for error handling
   const handleError = (res: any, error: unknown) => {
     console.error('API Error:', error);

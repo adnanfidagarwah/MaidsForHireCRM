@@ -25,6 +25,8 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { eq, desc, sql, and, ilike, or, gte, lte } from "drizzle-orm";
 import bcrypt from "bcrypt";
+import session from "express-session";
+import connectPg from "connect-pg-simple";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is required");
@@ -38,10 +40,14 @@ const db = drizzle(connection);
 
 // Enhanced storage interface with all CRM operations
 export interface IStorage {
+  // Session management
+  sessionStore: session.Store;
+
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  verifyPassword(password: string, hashedPassword: string): Promise<boolean>;
   getAllUsers(): Promise<User[]>;
 
   // Clients
@@ -108,7 +114,18 @@ export interface IStorage {
   }>;
 }
 
+const PostgresSessionStore = connectPg(session);
+
 export class DatabaseStorage implements IStorage {
+  sessionStore: session.Store;
+
+  constructor() {
+    this.sessionStore = new PostgresSessionStore({
+      conString: process.env.DATABASE_URL!,
+      createTableIfMissing: true,
+    });
+  }
+
   // Users
   async getUser(id: string): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
@@ -127,6 +144,10 @@ export class DatabaseStorage implements IStorage {
     
     const result = await db.insert(users).values(userWithHashedPassword).returning();
     return result[0];
+  }
+
+  async verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
+    return await bcrypt.compare(password, hashedPassword);
   }
 
   async getAllUsers(): Promise<User[]> {
