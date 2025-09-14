@@ -13,13 +13,22 @@ import {
   type InsertMessage,
   type Service,
   type InsertService,
+  type Property,
+  type InsertProperty,
+  type ContactActivity,
+  type InsertContactActivity,
+  type FollowUp,
+  type InsertFollowUp,
   users,
   clients,
   leads,
   jobs,
   bookings,
   messages,
-  services
+  services,
+  properties,
+  contactActivities,
+  followUps
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -34,12 +43,9 @@ if (!process.env.DATABASE_URL) {
 
 // Handle special characters in the database URL by manually encoding the password
 function fixSupabaseUrl(url: string): string {
-  console.log('Original URL (first 50 chars):', url.substring(0, 50) + '...');
-  
   // Find the last @ symbol which separates password from host
   const lastAtIndex = url.lastIndexOf('@');
   if (lastAtIndex === -1) {
-    console.log('No @ symbol found in URL');
     return url;
   }
   
@@ -50,7 +56,6 @@ function fixSupabaseUrl(url: string): string {
   // Extract user and password from prefix
   const colonIndex = prefix.indexOf(':', 'postgresql://'.length);
   if (colonIndex === -1) {
-    console.log('No colon found in user:password section');
     return url;
   }
   
@@ -59,7 +64,6 @@ function fixSupabaseUrl(url: string): string {
   const encodedPassword = encodeURIComponent(password);
   
   const fixedUrl = `${userPart}:${encodedPassword}@${suffix}`;
-  console.log('Fixed URL (first 50 chars):', fixedUrl.substring(0, 50) + '...');
   return fixedUrl;
 }
 
@@ -136,6 +140,30 @@ export interface IStorage {
   createService(service: InsertService): Promise<Service>;
   updateService(id: string, updates: Partial<InsertService>): Promise<Service | undefined>;
   deleteService(id: string): Promise<boolean>;
+
+  // Properties
+  getProperty(id: string): Promise<Property | undefined>;
+  getPropertiesByClient(clientId: string): Promise<Property[]>;
+  createProperty(property: InsertProperty): Promise<Property>;
+  updateProperty(id: string, updates: Partial<InsertProperty>): Promise<Property | undefined>;
+  deleteProperty(id: string): Promise<boolean>;
+
+  // Contact Activities
+  getContactActivity(id: string): Promise<ContactActivity | undefined>;
+  getActivitiesByClient(clientId: string): Promise<ContactActivity[]>;
+  getActivitiesByType(activityType: string): Promise<ContactActivity[]>;
+  createContactActivity(activity: InsertContactActivity): Promise<ContactActivity>;
+  updateContactActivity(id: string, updates: Partial<InsertContactActivity>): Promise<ContactActivity | undefined>;
+  deleteContactActivity(id: string): Promise<boolean>;
+
+  // Follow-ups
+  getFollowUp(id: string): Promise<FollowUp | undefined>;
+  getFollowUpsByClient(clientId: string): Promise<FollowUp[]>;
+  getFollowUpsByAssignee(assignedTo: string): Promise<FollowUp[]>;
+  getPendingFollowUps(): Promise<FollowUp[]>;
+  createFollowUp(followUp: InsertFollowUp): Promise<FollowUp>;
+  updateFollowUp(id: string, updates: Partial<InsertFollowUp>): Promise<FollowUp | undefined>;
+  deleteFollowUp(id: string): Promise<boolean>;
 
   // Analytics
   getDashboardStats(): Promise<{
@@ -573,6 +601,117 @@ export class DatabaseStorage implements IStorage {
         pendingBookings: 0,
       };
     }
+  }
+
+  // Properties
+  async getProperty(id: string): Promise<Property | undefined> {
+    const result = await db.select().from(properties).where(eq(properties.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getPropertiesByClient(clientId: string): Promise<Property[]> {
+    return await db.select().from(properties)
+      .where(and(eq(properties.clientId, clientId), eq(properties.isActive, true)))
+      .orderBy(desc(properties.createdAt));
+  }
+
+  async createProperty(property: InsertProperty): Promise<Property> {
+    const result = await db.insert(properties).values(property).returning();
+    return result[0];
+  }
+
+  async updateProperty(id: string, updates: Partial<InsertProperty>): Promise<Property | undefined> {
+    const result = await db.update(properties)
+      .set(updates)
+      .where(eq(properties.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteProperty(id: string): Promise<boolean> {
+    const result = await db.update(properties)
+      .set({ isActive: false })
+      .where(eq(properties.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
+  // Contact Activities
+  async getContactActivity(id: string): Promise<ContactActivity | undefined> {
+    const result = await db.select().from(contactActivities).where(eq(contactActivities.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getActivitiesByClient(clientId: string): Promise<ContactActivity[]> {
+    return await db.select().from(contactActivities)
+      .where(eq(contactActivities.clientId, clientId))
+      .orderBy(desc(contactActivities.scheduledAt));
+  }
+
+  async getActivitiesByType(activityType: string): Promise<ContactActivity[]> {
+    return await db.select().from(contactActivities)
+      .where(eq(contactActivities.activityType, activityType as any))
+      .orderBy(desc(contactActivities.scheduledAt));
+  }
+
+  async createContactActivity(activity: InsertContactActivity): Promise<ContactActivity> {
+    const result = await db.insert(contactActivities).values(activity).returning();
+    return result[0];
+  }
+
+  async updateContactActivity(id: string, updates: Partial<InsertContactActivity>): Promise<ContactActivity | undefined> {
+    const result = await db.update(contactActivities)
+      .set(updates)
+      .where(eq(contactActivities.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteContactActivity(id: string): Promise<boolean> {
+    const result = await db.delete(contactActivities).where(eq(contactActivities.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // Follow-ups
+  async getFollowUp(id: string): Promise<FollowUp | undefined> {
+    const result = await db.select().from(followUps).where(eq(followUps.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getFollowUpsByClient(clientId: string): Promise<FollowUp[]> {
+    return await db.select().from(followUps)
+      .where(eq(followUps.clientId, clientId))
+      .orderBy(followUps.scheduledDate);
+  }
+
+  async getFollowUpsByAssignee(assignedTo: string): Promise<FollowUp[]> {
+    return await db.select().from(followUps)
+      .where(eq(followUps.assignedTo, assignedTo))
+      .orderBy(followUps.scheduledDate);
+  }
+
+  async getPendingFollowUps(): Promise<FollowUp[]> {
+    return await db.select().from(followUps)
+      .where(eq(followUps.status, 'pending'))
+      .orderBy(followUps.scheduledDate);
+  }
+
+  async createFollowUp(followUp: InsertFollowUp): Promise<FollowUp> {
+    const result = await db.insert(followUps).values(followUp).returning();
+    return result[0];
+  }
+
+  async updateFollowUp(id: string, updates: Partial<InsertFollowUp>): Promise<FollowUp | undefined> {
+    const result = await db.update(followUps)
+      .set(updates)
+      .where(eq(followUps.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteFollowUp(id: string): Promise<boolean> {
+    const result = await db.delete(followUps).where(eq(followUps.id, id)).returning();
+    return result.length > 0;
   }
 }
 
