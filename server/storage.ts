@@ -32,7 +32,41 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is required");
 }
 
-const connection = postgres(process.env.DATABASE_URL, {
+// Handle special characters in the database URL by manually encoding the password
+function fixSupabaseUrl(url: string): string {
+  console.log('Original URL (first 50 chars):', url.substring(0, 50) + '...');
+  
+  // Find the last @ symbol which separates password from host
+  const lastAtIndex = url.lastIndexOf('@');
+  if (lastAtIndex === -1) {
+    console.log('No @ symbol found in URL');
+    return url;
+  }
+  
+  // Split into prefix (postgresql://user:password) and suffix (host:port/database)
+  const prefix = url.substring(0, lastAtIndex);
+  const suffix = url.substring(lastAtIndex + 1);
+  
+  // Extract user and password from prefix
+  const colonIndex = prefix.indexOf(':', 'postgresql://'.length);
+  if (colonIndex === -1) {
+    console.log('No colon found in user:password section');
+    return url;
+  }
+  
+  const userPart = prefix.substring(0, colonIndex);
+  const password = prefix.substring(colonIndex + 1);
+  const encodedPassword = encodeURIComponent(password);
+  
+  const fixedUrl = `${userPart}:${encodedPassword}@${suffix}`;
+  console.log('Fixed URL (first 50 chars):', fixedUrl.substring(0, 50) + '...');
+  return fixedUrl;
+}
+
+let databaseUrl = process.env.DATABASE_URL;
+databaseUrl = fixSupabaseUrl(databaseUrl);
+
+const connection = postgres(databaseUrl, {
   ssl: { rejectUnauthorized: false },
   max: 10,
 });
@@ -121,7 +155,7 @@ export class DatabaseStorage implements IStorage {
 
   constructor() {
     this.sessionStore = new PostgresSessionStore({
-      conString: process.env.DATABASE_URL!,
+      conString: databaseUrl,
       createTableIfMissing: true,
     });
   }
