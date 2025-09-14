@@ -146,7 +146,9 @@ export const insertUserSchema = createInsertSchema(users).omit({
   updatedAt: true,
 });
 
-export const insertClientSchema = createInsertSchema(clients).omit({
+export const insertClientSchema = createInsertSchema(clients, {
+  tags: z.array(z.string()).optional(),
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
@@ -158,13 +160,19 @@ export const insertLeadSchema = createInsertSchema(leads).omit({
   updatedAt: true,
 });
 
-export const insertJobSchema = createInsertSchema(jobs).omit({
+export const insertJobSchema = createInsertSchema(jobs, {
+  materials: z.array(z.string()).optional(),
+  staff: z.array(z.string()).optional(),
+  photos: z.array(z.string()).optional(),
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const insertBookingSchema = createInsertSchema(bookings).omit({
+export const insertBookingSchema = createInsertSchema(bookings, {
+  staff: z.array(z.string()).optional(),
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
